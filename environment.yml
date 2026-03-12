@@ -1,0 +1,21 @@
+name: soilcast
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - numpy
+  - pandas
+  - polars
+  - pyproj
+  - joblib
+  - streamlit
+  - folium
+  - matplotlib
+  - altair
+  - cartopy
+  - catboost
+  - scikit-learn
+  - pyyaml
+  - pip
+  - pip:
+      - streamlit-folium

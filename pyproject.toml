@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "soilcast"
+version = "0.1.0"
+description = "An Interactive Machine-Learning System for Forecasting Soil Health under Climate and Management Scenarios"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy",
+    "pandas",
+    "polars",
+    "pyproj",
+    "joblib",
+    "streamlit",
+    "folium",
+    "streamlit-folium",
+    "matplotlib",
+    "altair",
+    "cartopy",
+    "catboost",
+    "scikit-learn",
+    "pyyaml"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
