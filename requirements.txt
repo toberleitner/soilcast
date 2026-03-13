@@ -1,0 +1,14 @@
+numpy
+pandas
+polars
+pyproj
+joblib
+streamlit
+folium
+streamlit-folium
+matplotlib
+altair
+cartopy
+catboost
+scikit-learn
+pyyaml
