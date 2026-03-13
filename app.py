@@ -168,7 +168,16 @@ if st.session_state.run_sim:
             )
 
             if "location" in st.session_state:
-                folium.Marker(st.session_state.location).add_to(m)
+                icon = folium.features.CustomIcon(
+                    "assets/marker-icon.png",
+                    icon_size=(25, 41),
+                    icon_anchor=(12, 41),
+                )
+                
+                folium.Marker(
+                    st.session_state.location, 
+                    icon=icon
+                ).add_to(m)
 
             map_data = st_folium(m, height=500, width=700)
 
@@ -293,7 +302,7 @@ else:
         st.write("")
         st.write("")
         st.write("")
-        st.image(base_dir / 'data' / 'ai4sh.svg')
+        st.image(base_dir / 'assets' / 'ai4sh.svg')
         st.write("")
         st.write("")
         st.write("")
