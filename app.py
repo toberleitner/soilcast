@@ -1,5 +1,4 @@
 from pathlib import Path
-import joblib
 import numpy as np
 import polars as pl
 import streamlit as st
@@ -8,12 +7,10 @@ import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from streamlit_folium import st_folium
-from soilcast import (
-    feat_cont, feat_cat, responses,
-    cubify, find_nearest_simu, to_line_plot_data,  force_scenario, to_map_plot_data, sample,
-    forecast, plot_location_forecast
-)
-from app_inputs import UserInput, cls_options, irr_options, till_options, ssp_options
+from soilcast.app import to_line_plot_data, to_map_plot_data, plot_location_forecast
+from soilcast.model.ensemble import SoilCastModel
+from soilcast.data.aligned import AlignedDataFrame
+from soilcast.app.inputs import UserInput, cls_options, irr_options, till_options, ssp_options
 
 
 base_dir = Path(__file__).resolve().parent
@@ -57,23 +54,13 @@ def toggle(label, field, options):
     update(field, val)
 
 @st.cache_resource
-def load_models():
-    return {x: joblib.load(model_path / f'{x}.p') for x in responses}
+def init_model() -> SoilCastModel:
+    return SoilCastModel.load(model_path)
 
 @st.cache_resource
-def load_baseline_data() -> dict[tuple[int, str], pl.DataFrame]:
-    data = pl.read_parquet(data_path / 'climsoil.parquet')
-    return cubify(data, keys=["TILL", "IRR", "CLS", "RSD", "FTN"])
-
-@st.cache_resource
-def forecast_eu(data):
-    return forecast(
-        data, 
-        model_ocpd=models['OCPDd'], 
-        model_twn=models['TWNd'], 
-        model_prod=models['PRODd'], 
-        feat_cont=feat_cont, 
-        feat_cat=feat_cat, start_ssp='hist2')
+def load_baseline_data() -> AlignedDataFrame:
+    df = pl.read_parquet(data_path / 'climsoil.parquet')
+    return AlignedDataFrame(df, keys=["TILL", "IRR", "CLS", "RSD", "FTN"])
 
 with st.sidebar:
 
@@ -137,7 +124,7 @@ if st.session_state.run_sim:
     else:
         st.session_state.user_input.ftn = st.session_state.fert_value
 
-    models = load_models()
+    model = init_model()
     data = load_baseline_data()
 
     scenario = {
@@ -195,7 +182,7 @@ if st.session_state.run_sim:
 
         if "location" in st.session_state:
             lat, lon = st.session_state.location
-            data_location, dist = find_nearest_simu(data, lat, lon)
+            data_location, dist = data.find_nearest_simu(lat, lon)
             df_location = data_location[(1, 'hist2')]
 
             with st.container(border=True):
@@ -211,15 +198,9 @@ if st.session_state.run_sim:
                     st.markdown(f"**{df_location['OCPDinit'].item():.1f} t/ha**")
                     st.markdown(f"**{df_location['TWNinit'].item():.1f} t/ha**")
 
-            data_location = force_scenario(data_location, scenario)
+            data_location = data_location.with_columns(scenario)
 
-            y_pred = forecast(
-                data_location, 
-                model_ocpd=models['OCPDd'], 
-                model_twn=models['TWNd'], 
-                model_prod=models['PRODd'], 
-                feat_cont=feat_cont, 
-                feat_cat=feat_cat, start_ssp='hist2')
+            y_pred = model.predict(data_location, start_ssp='hist2')
 
             with st.container(border=True):
                 st.subheader('Soil Health & Productivity Forecast')
@@ -232,12 +213,12 @@ if st.session_state.run_sim:
         st.slider('Select target year', 2000, 2100, value=2000, step=20, key='eu_sim_year')
         st.slider('Sample size', 100, 87277, value=100, key='sample')
 
-        data_eu = force_scenario(data, scenario)
+        data_eu = data.with_columns(scenario)
 
         if st.session_state.sample < 87277:
-            data_eu = sample(data_eu, st.session_state.sample)
+            data_eu = data_eu.sample(st.session_state.sample)
         
-        y_pred = forecast_eu(data_eu)
+        y_pred = model.predict(data_eu, start_ssp='hist2')
 
         period_idx = (st.session_state.eu_sim_year - 2000) // 20 + 1
         if period_idx > 2:

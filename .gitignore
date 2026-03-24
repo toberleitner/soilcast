@@ -243,5 +243,5 @@ rsconnect/
 .history
 .ionide
 
-pipeline
 .vscode
+scratch

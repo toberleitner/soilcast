@@ -15,9 +15,9 @@ def plot_location_forecast(df: pd.DataFrame):
 
     for var, (title, color, ylabel) in mapping.items():
 
-        d = df[["Period", var, f"{var}err"]].copy()
-        d["lower"] = d[var] - d[f"{var}err"]
-        d["upper"] = d[var] + d[f"{var}err"]
+        d = df[["Period", var, f"{var}low", f"{var}high"]].copy()
+        d["lower"] = d[var] - d[f"{var}high"]
+        d["upper"] = d[var] - d[f"{var}low"]
 
         base = alt.Chart(d).encode(
             x=alt.X(
