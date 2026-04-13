@@ -20,6 +20,26 @@ base_dir = Path(__file__).resolve().parent
 model_path = base_dir / 'models'
 data_path = base_dir / 'data'
 
+crop_labels = {
+    1: "Corn",
+    2: "Potato",
+    3: "Rapeseed",
+    4: "Rice",
+    5: "Spring barley",
+    6: "Sugar beet",
+    7: "Soybean",
+    8: "Sunflower",
+    9: "Winter rye",
+    10: "Winter wheat",
+    11: "Clover",
+    12: "Cotton",
+    13: "Corn silage",
+    14: "Durum wheat",
+    15: "Flax seed",
+    16: "Field pea",
+    17: "Oats",
+}
+
 st.set_page_config(
     page_title="AI4SoilHealth Soil Health Projection",
     layout="centered"
@@ -217,10 +237,24 @@ if st.session_state.run_sim:
                 plot_data = plot_data[plot_data['SSP'] == st.session_state.user_input.ssp]
                 plot_location_forecast(plot_data)
 
+                
+                c1, c2 = st.columns([3, 2])
+                with c1:
+                    st.subheader('Carbon in Residues')
+                    
+                with c2:
+                    selected_crop = st.selectbox(
+                        'Assumed crop',
+                        options=list(crop_labels),
+                        index=0,
+                        format_func=lambda crop: crop_labels[crop],
+                        key='rsd_crop',
+                    )
+
                 rsd_pred = predict_rsd_all(
                     model_rsdc=models_rsd['RSDCyr'],
                     model_rnad=models_rsd['RNADyr'],
-                    crop=1,
+                    crop=selected_crop,
                     x_prod_pred=data_location,
                     y_prod_pred=y_pred,
                     norm_params=yldg_norm_params,
