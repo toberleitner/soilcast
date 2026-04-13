@@ -1,4 +1,6 @@
 from pathlib import Path
+from catboost import CatBoostRegressor
+import joblib
 import numpy as np
 import polars as pl
 import streamlit as st
@@ -7,8 +9,9 @@ import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from streamlit_folium import st_folium
-from soilcast.app import to_line_plot_data, to_map_plot_data, plot_location_forecast
+from soilcast.app import to_line_plot_data, to_map_plot_data, plot_location_forecast, plot_residue_forecast
 from soilcast.model.ensemble import SoilCastModel
+from soilcast.model.rsd import predict_rsd_all
 from soilcast.data.aligned import AlignedDataFrame
 from soilcast.app.inputs import UserInput, cls_options, irr_options, till_options, ssp_options
 
@@ -56,6 +59,10 @@ def toggle(label, field, options):
 @st.cache_resource
 def init_model() -> SoilCastModel:
     return SoilCastModel.load(model_path)
+
+@st.cache_resource
+def init_models_rsd() -> dict[str, CatBoostRegressor]:
+    return {x: joblib.load(model_path / f'{x}.p') for x in ['RSDCyr', 'RNADyr']}
 
 @st.cache_resource
 def load_baseline_data() -> AlignedDataFrame:
@@ -125,6 +132,8 @@ if st.session_state.run_sim:
         st.session_state.user_input.ftn = st.session_state.fert_value
 
     model = init_model()
+    models_rsd = init_models_rsd()
+    yldg_norm_params = pl.read_parquet(data_path / 'yldg_norm.parquet')
     data = load_baseline_data()
 
     scenario = {
@@ -155,7 +164,7 @@ if st.session_state.run_sim:
             )
 
             if "location" in st.session_state:
-                icon = folium.features.CustomIcon(
+                icon = folium.CustomIcon(
                     "assets/marker-icon.png",
                     icon_size=(25, 41),
                     icon_anchor=(12, 41),
@@ -207,6 +216,19 @@ if st.session_state.run_sim:
                 plot_data = to_line_plot_data(y_pred, data_path / 'error.p')
                 plot_data = plot_data[plot_data['SSP'] == st.session_state.user_input.ssp]
                 plot_location_forecast(plot_data)
+
+                rsd_pred = predict_rsd_all(
+                    model_rsdc=models_rsd['RSDCyr'],
+                    model_rnad=models_rsd['RNADyr'],
+                    crop=1,
+                    x_prod_pred=data_location,
+                    y_prod_pred=y_pred,
+                    norm_params=yldg_norm_params,
+                    hist='hist2',
+                    ssp=st.session_state.user_input.ssp
+                )
+                plot_residue_forecast(rsd_pred)
+
 
     elif mode == 'Pan-European':
         st.title('Pan-European Forecast')

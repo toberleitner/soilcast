@@ -5,8 +5,10 @@ import pandas as pd
 import polars as pl
 import pyproj
 
+from soilcast.data.aligned import AlignedDataFrame
 
-def to_line_plot_data(y_pred, error_file_path: Path) -> pd.DataFrame:
+
+def to_line_plot_data(y_pred: AlignedDataFrame, error_file_path: Path) -> pd.DataFrame:
     
     with open(error_file_path, 'rb') as f:
         error = pickle.load(f)
@@ -20,7 +22,7 @@ def to_line_plot_data(y_pred, error_file_path: Path) -> pd.DataFrame:
                 for k, v in y_pred.items() 
                 if k[1] in ['hist2', ssp]
             ], 
-            index=np.arange(1, 6 + 1)
+            index=np.arange(0, y_pred.num_periods + 1)
         )
     df = pd.concat(df)
     df.index.names = 'SSP', 'Period'
@@ -40,7 +42,7 @@ def to_line_plot_data(y_pred, error_file_path: Path) -> pd.DataFrame:
                 how='left'
             )
 
-    df_and_err = df_and_err.sort_index().reset_index()
+    df_and_err = df_and_err.sort_index().reset_index().fillna(0)
 
     return df_and_err
 

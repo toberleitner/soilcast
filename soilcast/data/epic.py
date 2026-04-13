@@ -4,7 +4,9 @@ import numpy as np
 import polars as pl
 
 
-def load_all(path_hc1: Path, path_hc2: Path, features: list[str], separate_hist: bool = False) -> pl.DataFrame:
+cols_internal = ['SimUID', 'SSP', 'FTN', 'HC', 'PRODinit', 'YLAT', 'XLONG']
+
+def load_all(path_hc1: Path, path_hc2: Path, columns: list[str], separate_hist: bool = False) -> pl.DataFrame:
     """
     Loads and merges consolidated HC1 and HC2 parquet dataframes.
     """
@@ -33,8 +35,8 @@ def load_all(path_hc1: Path, path_hc2: Path, features: list[str], separate_hist:
     data_hc2 = data_hc2.filter(pl.col('OCPDinit') < 250)
 
     data = pl.concat([
-            data_hc1[features], 
-            data_hc2[features]
+            data_hc1[columns], 
+            data_hc2[columns]
         ], how='vertical')
     
     if not separate_hist:

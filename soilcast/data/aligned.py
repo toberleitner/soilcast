@@ -11,6 +11,7 @@ class AlignedDataFrame(UserDict):
         self._initialized = False
         self._align(stacked, keys)
         self._initialized = True
+        
 
     def with_columns(self, key_values: dict) -> "AlignedDataFrame":
         new = AlignedDataFrame.__new__(AlignedDataFrame)
@@ -112,6 +113,17 @@ class AlignedDataFrame(UserDict):
         obj.data = dict(data)
 
         return obj
+
+    @property
+    def height(self) -> int:
+        if len(self) > 0:
+            return self[list(self.keys())[0]].height
+        else:
+            return 0
+
+    @property
+    def num_periods(self) -> int:
+        return max([x[0] for x in self.keys()])
 
     def _align(self, df: pl.DataFrame, keys: list[str]):
         entities = (

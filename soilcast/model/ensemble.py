@@ -16,7 +16,7 @@ class SoilCastModel:
     ]
     feat_cat = ['CLS', 'TILL', 'IRR', 'PERIOD']
 
-    def __init__(self,  model_ocpd: CatBoostRegressor, model_twn: CatBoostRegressor, model_prod: CatBoostRegressor,):
+    def __init__(self,  model_ocpd: CatBoostRegressor, model_twn: CatBoostRegressor, model_prod: CatBoostRegressor):
         self.model_ocpd = model_ocpd
         self.model_twn = model_twn
         self.model_prod = model_prod    
@@ -25,7 +25,8 @@ class SoilCastModel:
         self,
         x_pred: AlignedDataFrame,
         start_period: int = 1,
-        start_ssp: str = "hist1"
+        start_ssp: str = "hist1",
+        prod_relative: bool = True
     ) -> AlignedDataFrame:
         """
         Fast recursive prediction over aligned blocks.
@@ -36,9 +37,23 @@ class SoilCastModel:
         base = x_pred[(start_period, start_ssp)]
         ocpd = base["OCPDinit"].to_numpy().copy()
         twn = base["TWNinit"].to_numpy().copy()
-        prod = base["PRODinit"].to_numpy().copy()
+
+        if prod_relative:
+            prod = np.zeros(x_pred.height)
+        else:
+            prod = base["PRODinit"].to_numpy().copy()
 
         results = {}
+
+        results[(0, start_ssp)] = {
+            "OCPD": ocpd.copy(),
+            "TWN": twn.copy(),
+            "PROD": prod.copy(),
+            "OCPDd": np.zeros_like(ocpd),
+            "TWNd": np.zeros_like(ocpd),
+            "PRODd": np.zeros_like(ocpd),
+        }
+
         for period in periods:
 
             for ssp in [s for (p, s) in x_pred if p == period]:
