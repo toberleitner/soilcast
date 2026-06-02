@@ -1,17 +1,6 @@
 from dataclasses import dataclass
 from typing import Literal, Optional
 
-@dataclass
-class UserInput:
-
-    till: Literal['conv', 'mintill'] = 'mintill'
-    irr: Literal['rf', 'irr'] = 'rf'
-    cls: Literal[1, 2, 3, 4, 5, 6, 7] = 1
-    rsd: int = 0
-    ftn: float | None = None
-    location: tuple[float, float] | None = None
-    ssp: Literal['126', '585'] = '126'
-
 cls_options = {
     1: 'Productive - cereal', 
     2: 'Productive - wide-row dominated',

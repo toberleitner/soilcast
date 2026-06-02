@@ -1,4 +1,6 @@
+from collections import UserDict
 from pathlib import Path
+from typing import Optional
 from catboost import CatBoostRegressor
 import joblib
 import numpy as np
@@ -13,7 +15,7 @@ from soilcast.app import to_line_plot_data, to_map_plot_data, plot_location_fore
 from soilcast.model.ensemble import SoilCastModel
 from soilcast.model.rsd import predict_rsd_all
 from soilcast.data.aligned import AlignedDataFrame
-from soilcast.app.inputs import UserInput, cls_options, irr_options, till_options, ssp_options
+from soilcast.app.inputs import cls_options, irr_options, till_options, ssp_options
 
 
 base_dir = Path(__file__).resolve().parent
@@ -40,41 +42,63 @@ crop_labels = {
     17: "Oats",
 }
 
+sim_years = [2000, 2020, 2040, 2060, 2080, 2100]
+
 st.set_page_config(
     page_title="AI4SoilHealth Soil Health Projection",
     layout="centered"
 )
 
-if "user_input" not in st.session_state:
-    st.session_state.user_input = UserInput()
+# Default values
+if "mgt_type" not in st.session_state:
+    st.session_state.mgt_type = "Static"
 
-if "fert_bau" not in st.session_state:
-    st.session_state.fert_bau = True
+for yr in [None] + sim_years:
+    suffix = f"_{yr}" if yr else ""
 
-if "run_sim" not in st.session_state:
-    st.session_state.run_sim = False
+    if f"till{suffix}" not in st.session_state:
+        st.session_state[f"till{suffix}"] = "conv"
 
-def update(field, value):
-    setattr(st.session_state.user_input, field, value)
+    if f"irr{suffix}" not in st.session_state:
+        st.session_state[f"irr{suffix}"] = "rf"
+
+    if f"cls{suffix}" not in st.session_state:
+        st.session_state[f"cls{suffix}"] = 1
+
+    if f"ftn{suffix}" not in st.session_state:
+        st.session_state[f"ftn{suffix}"] = 0
+
+    if f"use_bau{suffix}" not in st.session_state:
+        st.session_state[f"use_bau{suffix}"] = True
+
+    if f"rsd{suffix}" not in st.session_state:
+        st.session_state[f"rsd{suffix}"] = 0
+
+if "ssp" not in st.session_state:
+    st.session_state.ssp = "126"
+
+if "mode" not in st.session_state:
+    st.session_state.mode = None
 
 def selector(label, field, options):
     val = st.selectbox(
         label, 
         options=options.keys(), 
         format_func=lambda x: options[x],
-        width='stretch'
+        width="stretch",
+        key=field
     )
-    update(field, val)
+    return val
 
 def toggle(label, field, options):
     val = st.segmented_control(
         label, 
         options=options.keys(), 
         format_func=lambda x: options[x],
-        default=list(options.keys())[0], 
-        width='stretch'
+        width="stretch",
+        key=field
     )
-    update(field, val)
+    return val
 
 @st.cache_resource
 def init_model() -> SoilCastModel:
@@ -82,93 +106,123 @@ def init_model() -> SoilCastModel:
 
 @st.cache_resource
 def init_models_rsd() -> dict[str, CatBoostRegressor]:
-    return {x: joblib.load(model_path / f'{x}.p') for x in ['RSDCyr', 'RNADyr']}
+    return {x: joblib.load(model_path / f"{x}.p") for x in ["RSDCyr", "RNADyr"]}
 
 @st.cache_resource
 def load_baseline_data() -> AlignedDataFrame:
-    df = pl.read_parquet(data_path / 'climsoil.parquet')
+    df = pl.read_parquet(data_path / "climsoil.parquet")
     return AlignedDataFrame(df, keys=["TILL", "IRR", "CLS", "RSD", "FTN"])
+
+def show_management(yr: Optional[int] = None):
+    
+    suffix = f"_{yr}" if yr else ""
+
+    selector("Crop rotation", f"cls{suffix}", cls_options)
+    toggle("Tillage", f"till{suffix}", till_options)
+    toggle("Irrigation", f"irr{suffix}", irr_options)
+    
+    col1, col2 = st.columns([3, 1])
+
+    with col2:
+        st.checkbox("BAU", key=f"use_bau{suffix}")
+
+    with col1:
+        st.slider(
+            "Fertilizer [kg/ha]",
+            min_value=0.0,
+            max_value=250.0,
+            disabled=st.session_state[f"use_bau{suffix}"],
+            step=1.0,
+            key=f"ftn{suffix}"
+        )
+
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        rsd = st.slider(
+            "Residue retention [%]",
+            min_value=0,
+            max_value=90,
+            step=1,
+            format="%d%%",
+            key=f"rsd{suffix}"
+        )
+
+def get_scenario_dict(yr: Optional[int] = None) -> dict:
+    suffix = f"_{yr}" if yr else ""
+    scenario = {
+        "TILL": st.session_state[f"till{suffix}"],
+        "IRR": st.session_state[f"irr{suffix}"],
+        "CLS": st.session_state[f"cls{suffix}"],
+        "RSD": st.session_state[f"rsd{suffix}"],
+    }
+    if not st.session_state[f"use_bau{suffix}"]:
+        scenario["FNO3yr"] = st.session_state[f"ftn{suffix}"]
+    return scenario
+
+def setup_x_pred(data: AlignedDataFrame) -> AlignedDataFrame:
+
+    new = AlignedDataFrame.__new__(AlignedDataFrame)
+    UserDict.__init__(new)
+
+    if st.session_state.mgt_type == "Static":
+        values = get_scenario_dict()
+        for key, df in data.items():
+            new.data[key] = df.with_columns(
+                [pl.lit(v).cast(df.schema[col]).alias(col) for col, v in values.items()]
+            )
+
+    elif st.session_state.mgt_type == "Dynamic":
+        for key, df in data.items():
+            yr = {i_: x for i_, x in enumerate(sim_years)}[key[0] - 1]
+            values = get_scenario_dict(yr)
+            new.data[key] = df.with_columns(
+                [pl.lit(v).cast(df.schema[col]).alias(col) for col, v in values.items()]
+            )
+
+    else:
+        raise ValueError("Invalid management type")
+
+    return new
 
 with st.sidebar:
 
-    with st.form("simulation_form", border=False):
+    st.header("Forecast Parameters", divider=True)
+    st.subheader("Field Management")
 
-        st.header('Forecast Parameters', divider=True)
-        st.subheader('Field Management')
-        
-        selector('Crop rotation', 'cls', cls_options)
-        toggle('Tillage', 'till', till_options)
-        toggle('Irrigation', 'irr', irr_options)
+    tab_static, tab_dyn = st.tabs(["Static", "Dynamic"], key="mgt_type", on_change="rerun")
 
-        col1, col2 = st.columns([3, 1])
+    with tab_static:
+        show_management()
+    
+    with tab_dyn:
+        for yr, tab in zip(sim_years, st.tabs([str(x) for x in sim_years])):
+            with tab:
+                show_management(yr)
 
-        with col2:
-            st.checkbox("BAU", key='fert_bau')
+    st.subheader("Scenario")
+    toggle("Climate projection", "ssp", ssp_options)
 
-        with col1:
-            st.slider(
-                "Fertilizer [kg/ha]",
-                min_value=0.0,
-                max_value=250.0,
-                value=0.01,
-                step=1.0,
-                key='fert_value'
-            )
-
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            rsd = st.slider(
-                "Residue retention [%]",
-                min_value=0,
-                max_value=90,
-                value=0,
-                step=1,
-                format="%d%%"
-            )
-            update('rsd', rsd)
-
-        st.subheader('Scenario')
-        toggle('Climate projection', 'ssp', ssp_options)
-
-        mode = st.segmented_control(
-            'Simulation scope',
-            ['Single location', 'Pan-European'],
-            default='Single location',
-            key='mode',
-            width='stretch'
-        )
-
-        if st.form_submit_button('Run simulation', type='primary', width='stretch'):
-            st.session_state.run_sim = True
+    mode = st.segmented_control(
+        "Run simulation",
+        ["Single location", "Pan-European"],
+        key="mode",
+        width="stretch"
+    )
 
 placeholder = st.empty()
 
-if st.session_state.run_sim:
+if st.session_state.mode is not None:
     placeholder = st.empty()
-
-    if st.session_state.fert_bau:
-        st.session_state.user_input.ftn = None
-    else:
-        st.session_state.user_input.ftn = st.session_state.fert_value
 
     model = init_model()
     models_rsd = init_models_rsd()
-    yldg_norm_params = pl.read_parquet(data_path / 'yldg_norm.parquet')
+    yldg_norm_params = pl.read_parquet(data_path / "yldg_norm.parquet")
     data = load_baseline_data()
 
-    scenario = {
-        'TILL': st.session_state.user_input.till,
-        'IRR': st.session_state.user_input.irr,
-        'CLS': st.session_state.user_input.cls,
-        'RSD': st.session_state.user_input.rsd,
-    }
-    if st.session_state.user_input.ftn is not None:
-        scenario['FNO3yr'] = st.session_state.fert_value
+    if mode == "Single location":
+        st.title("Single Location Forecast")
 
-    if mode == 'Single location':
-        st.title('Single Location Forecast')
-
-        with st.expander('Pick location', expanded=True):
+        with st.expander("Pick location", expanded=True):
 
             location = st.session_state.get("location", [50, 10])
 
@@ -215,72 +269,82 @@ if st.session_state.run_sim:
             df_location = data_location[(1, 'hist2')]
 
             with st.container(border=True):
-                st.subheader(f'Your location: {lat:.2f}, {lon:.2f}')
-                st.text('Climate and soil data for the forecast will be taken from the nearest simulation unit in our data.')
+                st.subheader(f"Your location: {lat:.2f}, {lon:.2f}")
+                st.text("Climate and soil data for the forecast will be taken from the nearest simulation unit in our data.")
                 c1, c2 = st.columns([2, 1], width=350, gap=None)
                 with c1:
-                    st.text('Distance to next centroid')
-                    st.text('Initial carbon in topsoil')
-                    st.text('Initial nitrogen in topsoil')
+                    st.text("Distance to next centroid")
+                    st.text("Initial carbon in topsoil")
+                    st.text("Initial nitrogen in topsoil")
                 with c2:
-                    st.markdown(f'**{(dist / 1000):.1f} km**')
+                    st.markdown(f"**{(dist / 1000):.1f} km**")
                     st.markdown(f"**{df_location['OCPDinit'].item():.1f} t/ha**")
                     st.markdown(f"**{df_location['TWNinit'].item():.1f} t/ha**")
 
-            data_location = data_location.with_columns(scenario)
+            # data_location = data_location.with_columns_static(scenario)
+            data_location = setup_x_pred(data_location)
 
-            y_pred = model.predict(data_location, start_ssp='hist2')
+            y_pred = model.predict(data_location, start_ssp="hist2")
 
             with st.container(border=True):
-                st.subheader('Soil Health & Productivity Forecast')
-                plot_data = to_line_plot_data(y_pred, data_path / 'error.p')
-                plot_data = plot_data[plot_data['SSP'] == st.session_state.user_input.ssp]
+                st.subheader("Soil Health & Productivity Forecast")
+                plot_data = to_line_plot_data(y_pred, data_path / "error.p")
+                plot_data = plot_data[plot_data["SSP"] == st.session_state.ssp]
                 plot_location_forecast(plot_data)
-
                 
                 c1, c2 = st.columns([3, 2])
                 with c1:
-                    st.subheader('Carbon in Residues')
+                    st.subheader("Carbon in Residues")
                     
                 with c2:
                     selected_crop = st.selectbox(
-                        'Assumed crop',
+                        "Assumed crop",
                         options=list(crop_labels),
                         index=0,
                         format_func=lambda crop: crop_labels[crop],
-                        key='rsd_crop',
+                        key="rsd_crop",
                     )
 
                 rsd_pred = predict_rsd_all(
-                    model_rsdc=models_rsd['RSDCyr'],
-                    model_rnad=models_rsd['RNADyr'],
+                    model_rsdc=models_rsd["RSDCyr"],
+                    model_rnad=models_rsd["RNADyr"],
                     crop=selected_crop,
                     x_prod_pred=data_location,
                     y_prod_pred=y_pred,
                     norm_params=yldg_norm_params,
-                    hist='hist2',
-                    ssp=st.session_state.user_input.ssp
+                    hist="hist2",
+                    ssp=st.session_state.ssp
                 )
                 plot_residue_forecast(rsd_pred)
 
 
-    elif mode == 'Pan-European':
-        st.title('Pan-European Forecast')
-        st.slider('Select target year', 2000, 2100, value=2000, step=20, key='eu_sim_year')
-        st.slider('Sample size', 100, 87277, value=100, key='sample')
+    elif mode == "Pan-European":
+        st.title("Pan-European Forecast")
 
-        data_eu = data.with_columns(scenario)
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.selectbox("Year", options=sim_years, key="eu_sim_year")
+
+        with col2:
+            selector(
+                "Sample size", 
+                "sample", 
+                options={1000: "low (1k)", 20000: "moderate (20k)", 40000: "high (40k)"}
+            )
+
+        data_eu = setup_x_pred(data)
 
         if st.session_state.sample < 87277:
             data_eu = data_eu.sample(st.session_state.sample)
         
-        y_pred = model.predict(data_eu, start_ssp='hist2')
+        y_pred = model.predict(data_eu, start_ssp="hist2")
 
         period_idx = (st.session_state.eu_sim_year - 2000) // 20 + 1
         if period_idx > 2:
-            key = (period_idx, st.session_state.user_input.ssp)
+            key = (period_idx, st.session_state.ssp)
         else:
-            key = (period_idx, 'hist2')
+            key = (period_idx, "hist2")
 
         y_pred = to_map_plot_data(data_eu, y_pred)
         df = y_pred[key]
@@ -293,9 +357,9 @@ if st.session_state.run_sim:
         )
 
         for i, (response, title, ylabel, cmap) in enumerate([
-            ('OCPD', 'Soil organic carbon', 'Soil organic carbon [t/ha]', 'summer_r'),
-            ('TWN', 'Total nitrogen', 'Total nitrogen [t/ha]', 'autumn_r'),
-            ('PROD', 'Productivity', 'Productivity [normalized]', 'winter_r')
+            ("OCPD", "Soil organic carbon", "Soil organic carbon [t/ha]", "summer_r"),
+            ("TWN", "Total nitrogen", "Total nitrogen [t/ha]", "autumn_r"),
+            ("PROD", "Productivity", "Productivity [normalized]", "winter_r")
         ]):
 
             ax = axs[i]
@@ -329,7 +393,7 @@ if st.session_state.run_sim:
 
 else:
     with placeholder.container():
-        st.title('Welcome To SoilCast!')
+        st.title("Welcome To SoilCast!")
         st.text("""This application allows you to explore the impacts of agricultural management and climate scenarios on soil and crop dynamics.
 
     You can run simulations for a specific location or explore pan-European projections under different management practices and climate pathways. Adjust field management parameters in the sidebar and run the simulation to generate forecasts.
@@ -339,11 +403,11 @@ else:
         st.write("")
         st.write("")
         st.write("")
-        st.image(base_dir / 'assets' / 'ai4sh.svg')
+        st.image(base_dir / "assets" / "ai4sh.svg")
         st.write("")
         st.write("")
         st.write("")
         st.markdown(
-            '*SoilCast is a research prototype developed for interactive exploration of soil and crop simulation scenarios. ' +
-            'Predictions are generated by machine-learning surrogate models trained on simulation data and should be interpreted ' +
-            'as exploratory model outputs rather than operational forecasts.*')
+            "*SoilCast is a research prototype developed for interactive exploration of soil and crop simulation scenarios. " +
+            "Predictions are generated by machine-learning surrogate models trained on simulation data and should be interpreted " +
+            "as exploratory model outputs rather than operational forecasts.*")

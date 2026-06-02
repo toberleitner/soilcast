@@ -13,13 +13,24 @@ class AlignedDataFrame(UserDict):
         self._initialized = True
         
 
-    def with_columns(self, key_values: dict) -> "AlignedDataFrame":
+    def with_columns_static(self, values: dict) -> "AlignedDataFrame":
         new = AlignedDataFrame.__new__(AlignedDataFrame)
         UserDict.__init__(new)
 
         for key, df in self.items():
             new.data[key] = df.with_columns(
-                [pl.lit(v).alias(col) for col, v in key_values.items()]
+                [pl.lit(v).alias(col) for col, v in values.items()]
+            )
+
+        return new
+    
+    def with_columns_dynamic(self, values: dict[int, dict]) -> "AlignedDataFrame":
+        new = AlignedDataFrame.__new__(AlignedDataFrame)
+        UserDict.__init__(new)
+
+        for key, df in self.items():
+            new.data[key] = df.with_columns(
+                [pl.lit(v).alias(col) for col, v in values[key[0]].items()]
             )
 
         return new
@@ -142,9 +153,9 @@ class AlignedDataFrame(UserDict):
             raise TypeError("Read-only")
         super().__setitem__(key, value)
 
-    def __delitem__(self, key):
-        if self._initialized:
-            raise TypeError("Read-only")
+    # def __delitem__(self, key):
+    #     if self._initialized:
+    #         raise TypeError("Read-only")
 
 def align_by_keys(df: pl.DataFrame, keys: list) -> pl.DataFrame:
     """
