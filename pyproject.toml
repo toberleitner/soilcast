@@ -6,23 +6,19 @@ build-backend = "setuptools.build_meta"
 name = "soilcast"
 version = "0.1.0"
 description = "An Interactive Machine-Learning System for Forecasting Soil Health under Climate and Management Scenarios"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.14"
 dependencies = [
     "numpy",
     "pandas",
     "polars",
     "pyproj",
-    "joblib",
-    "streamlit",
-    "folium",
-    "streamlit-folium",
-    "matplotlib",
-    "altair",
-    "cartopy",
     "catboost",
-    "scikit-learn",
-    "pyyaml"
+    "scikit-learn"
 ]
+
+[tool.setuptools.package-data]
+"soilcast.models" = ["*.cbm"]
 
 [tool.setuptools.packages.find]
 where = ["."]
+exclude = ["build*"]

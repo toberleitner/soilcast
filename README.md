@@ -1,8 +1,14 @@
 # SoilCast
 
-**SoilCast** is an interactive machine-learning system for exploring projections of soil organic carbon, soil nitrogen, and crop productivity under different climate and agricultural management scenarios across Europe.
+**SoilCast** provides machine-learning models for projecting soil organic carbon, soil nitrogen, and crop productivity under different climate and agricultural management scenarios across Europe.
 
-The system uses **machine-learning emulators trained on large-scale environmental simulation data** to approximate computationally expensive process-based models, enabling **real-time scenario exploration** through an interactive Streamlit interface.
+The models are packaged in CatBoost's native `.cbm` format and loaded automatically from package resources:
+
+```python
+from soilcast.ensemble import load_model
+
+model = load_model()
+```
 
 This repository accompanies the **ECML-PKDD 2026 Demo paper**.
 

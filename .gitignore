@@ -246,3 +246,4 @@ rsconnect/
 .vscode
 scratch
 catboost_info
+.devcontainer
